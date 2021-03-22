@@ -13,12 +13,15 @@ on:
       - edited
       - reopened
       - synchronize
+      - closed
   pull_request:
-      types:
+    types:
       - opened
       - edited
       - reopened
       - closed
+  schedule:
+    - cron: '0 * * * *' # check hourly
 
 jobs:
   check:
@@ -38,5 +41,4 @@ jobs:
 
           # (Optional) A comma-separated list of keywords. Default
           # "depends on, blocked by"
-          keywords: depends on, blocked by
-
+          keywords: depends on, Depends on
