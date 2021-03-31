@@ -13,13 +13,22 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+package gather
 
-package components
-
-const (
-	Connectivity     = "connectivity"
-	ServiceDiscovery = "service-discovery"
-	Globalnet        = "globalnet"
-	Broker           = "broker"
-	Operator         = "operator"
+import (
+	"github.com/submariner-io/submariner-operator/apis/submariner/v1alpha1"
+	"github.com/submariner-io/submariner-operator/pkg/internal/cli"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
+
+type Info struct {
+	RestConfig  *rest.Config
+	Submariner  *v1alpha1.Submariner
+	Status      *cli.Status
+	ClientSet   kubernetes.Interface
+	DynClient   dynamic.Interface
+	ClusterName string
+	DirName     string
+}

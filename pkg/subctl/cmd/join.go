@@ -74,6 +74,7 @@ var (
 	healthCheckEnable             bool
 	healthCheckInterval           uint64
 	healthCheckMaxPacketLossCount uint64
+	corednsCustomConfigMap        string
 )
 
 func init() {
@@ -130,6 +131,9 @@ func addJoinFlags(cmd *cobra.Command) {
 		"maximum number of packets lost before the connection is marked as down")
 	cmd.Flags().BoolVar(&globalnetEnabled, "globalnet", true,
 		"enable/disable Globalnet for this cluster")
+	cmd.Flags().StringVar(&corednsCustomConfigMap, "coredns-custom-configmap", "",
+		"Name of the custom CoreDNS configmap to configure forwarding to lighthouse. It should be in "+
+			"<namespace>/<name> format where <namespace> is optional and defaults to kube-system")
 }
 
 const (
@@ -139,9 +143,10 @@ const (
 )
 
 var joinCmd = &cobra.Command{
-	Use:   "join",
-	Short: "Connect a cluster to an existing broker",
-	Args:  cobra.MaximumNArgs(1),
+	Use:     "join",
+	Short:   "Connect a cluster to an existing broker",
+	Args:    cobra.MaximumNArgs(1),
+	PreRunE: checkVersionMismatch,
 	Run: func(cmd *cobra.Command, args []string) {
 		err := checkArgumentPassed(args)
 		exitOnError("Argument missing", err)
@@ -150,6 +155,8 @@ var joinCmd = &cobra.Command{
 		exitOnError("Error loading the broker information from the given file", err)
 		fmt.Printf("* %s says broker is at: %s\n", args[0], subctlData.BrokerURL)
 		exitOnError("Error connecting to broker cluster", err)
+		err = isValidCustomCoreDNSConfig()
+		exitOnError("Invalid Custom CoreDNS configuration", err)
 		config := getClientConfig(kubeConfig, kubeContext)
 		joinSubmarinerCluster(config, kubeContext, subctlData)
 	},
@@ -499,6 +506,13 @@ func populateSubmarinerSpec(subctlData *datafile.SubctlData, netconfig globalnet
 	if netconfig.GlobalnetCIDR != "" {
 		submarinerSpec.GlobalCIDR = netconfig.GlobalnetCIDR
 	}
+	if corednsCustomConfigMap != "" {
+		namespace, name := getCustomCoreDNSParams()
+		submarinerSpec.CoreDNSCustomConfig = &submariner.CoreDNSCustomConfig{
+			ConfigMapName: name,
+			Namespace:     namespace,
+		}
+	}
 	if len(customDomains) > 0 {
 		submarinerSpec.CustomDomains = customDomains
 	}
@@ -564,6 +578,14 @@ func populateServiceDiscoverySpec(subctlData *datafile.SubctlData) *submariner.S
 		ImageOverrides:           getImageOverrides(),
 	}
 
+	if corednsCustomConfigMap != "" {
+		namespace, name := getCustomCoreDNSParams()
+		serviceDiscoverySpec.CoreDNSCustomConfig = &submariner.CoreDNSCustomConfig{
+			ConfigMapName: name,
+			Namespace:     namespace,
+		}
+	}
+
 	if len(customDomains) > 0 {
 		serviceDiscoverySpec.CustomDomains = customDomains
 	}
@@ -596,4 +618,23 @@ func getImageOverrides() map[string]string {
 		return imageOverrides
 	}
 	return nil
+}
+
+func isValidCustomCoreDNSConfig() error {
+	if corednsCustomConfigMap != "" && strings.Count(corednsCustomConfigMap, "/") > 1 {
+		return fmt.Errorf("coredns-custom-configmap should be in <namespace>/<name> format, namespace is optional")
+	}
+	return nil
+}
+
+func getCustomCoreDNSParams() (namespace, name string) {
+	if corednsCustomConfigMap != "" {
+		name = corednsCustomConfigMap
+		paramList := strings.Split(corednsCustomConfigMap, "/")
+		if len(paramList) > 1 {
+			namespace = paramList[0]
+			name = paramList[1]
+		}
+	}
+	return namespace, name
 }
