@@ -10,10 +10,6 @@ on:
     types:
       - opened
       - reopened
-  pull_request:
-    types:
-      - opened
-      - reopened
   schedule:
     - cron: '0 0 * * *' # check daily
 
