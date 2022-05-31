@@ -3,10 +3,9 @@ module github.com/submariner-io/submariner-operator
 go 1.17
 
 require (
-	github.com/AlecAivazis/survey/v2 v2.3.4
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
-	github.com/go-logr/logr v0.4.0
+	github.com/go-logr/logr v1.2.3
 	github.com/gophercloud/utils v0.0.0-20210909165623-d7085207ff6d
 	github.com/mattn/go-isatty v0.0.14
 	github.com/onsi/ginkgo v1.16.5
@@ -99,14 +98,12 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kelseyhightower/envconfig v1.4.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
-	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
