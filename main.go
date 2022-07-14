@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/submariner-io/submariner-operator/controllers/servicediscovery"
 	"github.com/submariner-io/submariner-operator/controllers/submariner"
 	"os"
 
@@ -101,7 +102,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Submariner")
 		os.Exit(1)
 	}
-	if err = (&controllers.ServiceDiscoveryReconciler{
+	if err = (&servicediscovery.Reconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
