@@ -1,0 +1,20 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 140
+  # Allow standard GHA syntax for "on: *"
+  truthy:
+    ignore: '.github/workflows/*.yml'
+
+ignore: |
+  /vendor
+  /api/vendor
+  /deploy/crds
+  /deploy/submariner/crds
+  /deploy/mcsapi/crds/multicluster.x_k8s.io_serviceexports.yaml
+  /deploy/mcsapi/crds/multicluster.x_k8s.io_serviceimports.yaml
+  /config
+  /bundle
+  /packagemanifests

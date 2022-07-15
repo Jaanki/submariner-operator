@@ -25,3 +25,6 @@ testbin/*
 *~
 
 vendor
+.dapper
+Makefile.dapper
+/Dockerfile.*
