@@ -23,7 +23,7 @@ import (
 	"os"
 	"strings"
 
-	apis "github.com/submariner-io/submariner-operator/api/submariner/v1alpha1"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/pkg/names"
 	v1 "k8s.io/api/core/v1"
 )
@@ -79,7 +79,7 @@ func ParseOperatorImage(operatorImage string) (string, string) {
 	i := strings.LastIndex(imageName, ":")
 
 	if i == -1 {
-		version = apis.DefaultSubmarinerOperatorVersion
+		version = v1alpha1.DefaultSubmarinerOperatorVersion
 	} else {
 		version = imageName[i+1:]
 	}

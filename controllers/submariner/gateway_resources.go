@@ -26,9 +26,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
-	"github.com/submariner-io/submariner-operator/api/submariner/v1alpha1"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/controllers/helpers"
-	"github.com/submariner-io/submariner-operator/controllers/metrics"
 	"github.com/submariner-io/submariner-operator/pkg/names"
 	submarinerv1 "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	"github.com/submariner-io/submariner/pkg/port"
@@ -251,9 +250,6 @@ func (r *Reconciler) reconcileGatewayDaemonSet(
 	if err != nil {
 		return nil, err
 	}
-
-	err = metrics.Setup(instance.Namespace, instance, daemonSet.GetLabels(), gatewayMetricsServerPort, r.config.Client,
-		r.config.RestConfig, r.config.Scheme, reqLogger)
 
 	return daemonSet, err
 }

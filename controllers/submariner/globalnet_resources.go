@@ -20,9 +20,8 @@ package submariner
 
 import (
 	"github.com/go-logr/logr"
-	"github.com/submariner-io/submariner-operator/api/submariner/v1alpha1"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/controllers/helpers"
-	"github.com/submariner-io/submariner-operator/controllers/metrics"
 	"github.com/submariner-io/submariner-operator/pkg/names"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -39,9 +38,6 @@ func (r *Reconciler) reconcileGlobalnetDaemonSet(instance *v1alpha1.Submariner, 
 	if err != nil {
 		return nil, err
 	}
-
-	err = metrics.Setup(instance.Namespace, instance, daemonSet.GetLabels(), globalnetMetricsServerPort,
-		r.config.Client, r.config.RestConfig, r.config.Scheme, reqLogger)
 
 	return daemonSet, err
 }

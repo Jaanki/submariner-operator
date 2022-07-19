@@ -1,22 +1,10 @@
----
 resources:
-  - manager.yaml
+- manager.yaml
 
-vars:
-  - fieldref:
-      fieldPath: metadata.namespace
-    name: SUBMARINER_OPERATOR_NAMESPACE
-    objref:
-      group: apps
-      kind: Deployment
-      name: submariner-operator
-      version: v1
+generatorOptions:
+  disableNameSuffixHash: true
 
-patchesJson6902:
-  - path: patches/related-images.deployment.config.yaml
-    target:
-      group: apps
-      kind: Deployment
-      name: submariner-operator
-      namespace: system
-      version: v1
+configMapGenerator:
+- name: manager-config
+  files:
+  - controller_manager_config.yaml

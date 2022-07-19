@@ -1,7 +1,5 @@
 /*
-SPDX-License-Identifier: Apache-2.0
-
-Copyright Contributors to the Submariner project.
+Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,21 +20,12 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
-	"reflect"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
-
 	"github.com/go-logr/logr"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/finalizer"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
-	submarinerv1alpha1 "github.com/submariner-io/submariner-operator/api/submariner/v1alpha1"
 	"github.com/submariner-io/submariner-operator/controllers/constants"
 	"github.com/submariner-io/submariner-operator/controllers/helpers"
-	"github.com/submariner-io/submariner-operator/controllers/metrics"
 	"github.com/submariner-io/submariner-operator/controllers/resource"
 	"github.com/submariner-io/submariner-operator/pkg/images"
 	"github.com/submariner-io/submariner-operator/pkg/names"
@@ -45,17 +34,26 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
-	ctrl "sigs.k8s.io/controller-runtime"
-	controllerClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"reflect"
+	"regexp"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sort"
+	"strconv"
+	"strings"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
+	clientset "k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var log = logf.Log.WithName("controller_servicediscovery")
@@ -73,15 +71,18 @@ const (
 
 type Config struct {
 	// This client is a split client that reads objects from the cache and writes to the apiserver
-	Client         controllerClient.Client
+	Client         client.Client
 	RestConfig     *rest.Config
 	Scheme         *runtime.Scheme
 	KubeClient     clientset.Interface
-	OperatorClient controllerClient.Client
+	OperatorClient client.Client
 }
 
-// Reconciler reconciles a ServiceDiscovery object.
+
+// Reconciler reconciles a ServiceDiscovery object
 type Reconciler struct {
+	Client client.Client
+	Scheme *runtime.Scheme
 	config Config
 	log    logr.Logger
 }
@@ -103,9 +104,13 @@ func NewReconciler(config *Config) *Reconciler {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 
-// +kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries/status,verbs=get;update;patch
-func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=submariner.io,resources=servicediscoveries/finalizers,verbs=update
+
+func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+	//_ = log.FromContext(ctx)
+
 	reqLogger := log.V(2).WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling ServiceDiscovery")
 
@@ -115,9 +120,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 		// Return and don't requeue
 		deployment := &appsv1.Deployment{}
-		opts := []controllerClient.DeleteAllOfOption{
-			controllerClient.InNamespace(request.NamespacedName.Namespace),
-			controllerClient.MatchingLabels{"app": names.ServiceDiscoveryComponent},
+		opts := []client.DeleteAllOfOption{
+			client.InNamespace(request.NamespacedName.Namespace),
+			client.MatchingLabels{"app": names.ServiceDiscoveryComponent},
 		}
 		err := r.config.Client.DeleteAllOf(ctx, deployment, opts...)
 
@@ -178,8 +183,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	return reconcile.Result{}, err
 }
 
-func (r *Reconciler) getServiceDiscovery(ctx context.Context, key types.NamespacedName) (*submarinerv1alpha1.ServiceDiscovery, error) {
-	instance := &submarinerv1alpha1.ServiceDiscovery{}
+// SetupWithManager sets up the controller with the Manager.
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// These are required so that we can manipulate DNS ConfigMap
+	if err := operatorv1.Install(mgr.GetScheme()); err != nil {
+		return err
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		Named("servicediscovery-controller").
+		// Watch for changes to primary resource ServiceDiscovery
+		For(&v1alpha1.ServiceDiscovery{}).
+		// Watch for changes to secondary resource Deployment and requeue the owner ServiceDiscovery
+		Owns(&appsv1.Deployment{}).
+		Complete(r)
+}
+
+func (r *Reconciler) getServiceDiscovery(ctx context.Context, key types.NamespacedName) (*v1alpha1.ServiceDiscovery, error) {
+	instance := &v1alpha1.ServiceDiscovery{}
 
 	err := r.config.Client.Get(ctx, key, instance)
 	if err != nil {
@@ -190,10 +211,10 @@ func (r *Reconciler) getServiceDiscovery(ctx context.Context, key types.Namespac
 }
 
 func (r *Reconciler) addFinalizer(ctx context.Context,
-	instance *submarinerv1alpha1.ServiceDiscovery,
-) (*submarinerv1alpha1.ServiceDiscovery, error) {
+	instance *v1alpha1.ServiceDiscovery,
+) (*v1alpha1.ServiceDiscovery, error) {
 	added, err := finalizer.Add(ctx, resource.ForControllerClient(r.config.Client, instance.Namespace,
-		&submarinerv1alpha1.ServiceDiscovery{}), instance, constants.CleanupFinalizer)
+		&v1alpha1.ServiceDiscovery{}), instance, constants.CleanupFinalizer)
 	if err != nil {
 		return nil, err // nolint:wrapcheck // No need to wrap
 	}
@@ -205,7 +226,7 @@ func (r *Reconciler) addFinalizer(ctx context.Context,
 	return r.getServiceDiscovery(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: instance.Name})
 }
 
-func newLighthouseAgent(cr *submarinerv1alpha1.ServiceDiscovery, name string) *appsv1.Deployment {
+func newLighthouseAgent(cr *v1alpha1.ServiceDiscovery, name string) *appsv1.Deployment {
 	replicas := int32(1)
 	labels := map[string]string{
 		"app":       name,
@@ -281,7 +302,7 @@ func newLighthouseAgent(cr *submarinerv1alpha1.ServiceDiscovery, name string) *a
 	}
 }
 
-func newLighthouseDNSConfigMap(cr *submarinerv1alpha1.ServiceDiscovery) *corev1.ConfigMap {
+func newLighthouseDNSConfigMap(cr *v1alpha1.ServiceDiscovery) *corev1.ConfigMap {
 	labels := map[string]string{
 		"app":       names.LighthouseCoreDNSComponent,
 		"component": componentName,
@@ -311,7 +332,7 @@ prometheus :9153
 	}
 }
 
-func newCoreDNSCustomConfigMap(config *submarinerv1alpha1.CoreDNSCustomConfig) *corev1.ConfigMap {
+func newCoreDNSCustomConfigMap(config *v1alpha1.CoreDNSCustomConfig) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.ConfigMapName,
@@ -320,7 +341,7 @@ func newCoreDNSCustomConfigMap(config *submarinerv1alpha1.CoreDNSCustomConfig) *
 	}
 }
 
-func newLighthouseCoreDNSDeployment(cr *submarinerv1alpha1.ServiceDiscovery) *appsv1.Deployment {
+func newLighthouseCoreDNSDeployment(cr *v1alpha1.ServiceDiscovery) *appsv1.Deployment {
 	replicas := int32(2)
 	labels := map[string]string{
 		"app":       names.LighthouseCoreDNSComponent,
@@ -394,7 +415,7 @@ func newLighthouseCoreDNSDeployment(cr *submarinerv1alpha1.ServiceDiscovery) *ap
 	}
 }
 
-func newLighthouseCoreDNSService(cr *submarinerv1alpha1.ServiceDiscovery) *corev1.Service {
+func newLighthouseCoreDNSService(cr *v1alpha1.ServiceDiscovery) *corev1.Service {
 	labels := map[string]string{
 		"app":       names.LighthouseCoreDNSComponent,
 		"component": componentName,
@@ -424,7 +445,7 @@ func newLighthouseCoreDNSService(cr *submarinerv1alpha1.ServiceDiscovery) *corev
 	}
 }
 
-func getCustomCoreDNSNamespace(config *submarinerv1alpha1.CoreDNSCustomConfig) string {
+func getCustomCoreDNSNamespace(config *v1alpha1.CoreDNSCustomConfig) string {
 	if config.Namespace != "" {
 		return config.Namespace
 	}
@@ -432,7 +453,7 @@ func getCustomCoreDNSNamespace(config *submarinerv1alpha1.CoreDNSCustomConfig) s
 	return defaultCoreDNSNamespace
 }
 
-func (r *Reconciler) updateDNSCustomConfigMap(ctx context.Context, cr *submarinerv1alpha1.ServiceDiscovery,
+func (r *Reconciler) updateDNSCustomConfigMap(ctx context.Context, cr *v1alpha1.ServiceDiscovery,
 	reqLogger logr.Logger,
 ) error {
 	var configFunc func(context.Context, *corev1.ConfigMap) (*corev1.ConfigMap, error)
@@ -488,7 +509,7 @@ func (r *Reconciler) updateDNSCustomConfigMap(ctx context.Context, cr *submarine
 	return errors.Wrap(retryErr, "error updating DNS custom ConfigMap")
 }
 
-func (r *Reconciler) configureDNSConfigMap(ctx context.Context, cr *submarinerv1alpha1.ServiceDiscovery, configMapNamespace,
+func (r *Reconciler) configureDNSConfigMap(ctx context.Context, cr *v1alpha1.ServiceDiscovery, configMapNamespace,
 	configMapName string,
 ) error {
 	lighthouseDNSService := &corev1.Service{}
@@ -506,7 +527,7 @@ func (r *Reconciler) configureDNSConfigMap(ctx context.Context, cr *submarinerv1
 	return r.updateLighthouseConfigInConfigMap(ctx, cr, configMapNamespace, configMapName, lighthouseDNSService.Spec.ClusterIP)
 }
 
-func (r *Reconciler) updateLighthouseConfigInConfigMap(ctx context.Context, cr *submarinerv1alpha1.ServiceDiscovery,
+func (r *Reconciler) updateLighthouseConfigInConfigMap(ctx context.Context, cr *v1alpha1.ServiceDiscovery,
 	configMapNamespace, configMapName, clusterIP string,
 ) error {
 	// nolint:wrapcheck // No need to wrap errors here
@@ -575,7 +596,7 @@ func findCoreDNSListeningPort(coreFile string) string {
 	return coreDNSPort
 }
 
-func (r *Reconciler) configureOpenshiftClusterDNSOperator(ctx context.Context, instance *submarinerv1alpha1.ServiceDiscovery) error {
+func (r *Reconciler) configureOpenshiftClusterDNSOperator(ctx context.Context, instance *v1alpha1.ServiceDiscovery) error {
 	lighthouseDNSService := &corev1.Service{}
 
 	err := r.config.Client.Get(ctx, types.NamespacedName{Name: names.LighthouseCoreDNSComponent, Namespace: instance.Namespace},
@@ -591,7 +612,7 @@ func (r *Reconciler) configureOpenshiftClusterDNSOperator(ctx context.Context, i
 	return r.updateLighthouseConfigInOpenshiftDNSOperator(ctx, instance, lighthouseDNSService.Spec.ClusterIP)
 }
 
-func (r *Reconciler) updateLighthouseConfigInOpenshiftDNSOperator(ctx context.Context, instance *submarinerv1alpha1.ServiceDiscovery,
+func (r *Reconciler) updateLighthouseConfigInOpenshiftDNSOperator(ctx context.Context, instance *v1alpha1.ServiceDiscovery,
 	clusterIP string,
 ) error {
 	// nolint:wrapcheck // No need to wrap errors here
@@ -637,7 +658,7 @@ func (r *Reconciler) updateLighthouseConfigInOpenshiftDNSOperator(ctx context.Co
 	return errors.Wrap(retryErr, "error updating Openshift DNS operator")
 }
 
-func getUpdatedForwardServers(instance *submarinerv1alpha1.ServiceDiscovery, dnsOperator *operatorv1.DNS,
+func getUpdatedForwardServers(instance *v1alpha1.ServiceDiscovery, dnsOperator *operatorv1.DNS,
 	clusterIP string,
 ) []operatorv1.Server {
 	updatedForwardServers := make([]operatorv1.Server, 0)
@@ -697,44 +718,22 @@ func getUpdatedForwardServers(instance *submarinerv1alpha1.ServiceDiscovery, dns
 	return updatedForwardServers
 }
 
-func getImagePath(submariner *submarinerv1alpha1.ServiceDiscovery, imageName, componentName string) string {
+func getImagePath(submariner *v1alpha1.ServiceDiscovery, imageName, componentName string) string {
 	return images.GetImagePath(submariner.Spec.Repository, submariner.Spec.Version, imageName, componentName,
 		submariner.Spec.ImageOverrides)
 }
 
-// nolint:wrapcheck // No need to wrap errors here.
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// These are required so that we can manipulate DNS ConfigMap
-	if err := operatorv1.Install(mgr.GetScheme()); err != nil {
-		return err
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		Named("servicediscovery-controller").
-		// Watch for changes to primary resource ServiceDiscovery
-		For(&submarinerv1alpha1.ServiceDiscovery{}).
-		// Watch for changes to secondary resource Deployment and requeue the owner ServiceDiscovery
-		Owns(&appsv1.Deployment{}).
-		Complete(r)
-}
-
-func (r *Reconciler) ensureLightHouseAgent(instance *submarinerv1alpha1.ServiceDiscovery, reqLogger logr.Logger) error {
+func (r *Reconciler) ensureLightHouseAgent(instance *v1alpha1.ServiceDiscovery, reqLogger logr.Logger) error {
 	lightHouseAgent := newLighthouseAgent(instance, names.ServiceDiscoveryComponent)
 	if _, err := helpers.ReconcileDeployment(instance, lightHouseAgent, reqLogger,
 		r.config.Client, r.config.Scheme); err != nil {
 		return errors.Wrap(err, "error reconciling agent deployment")
 	}
 
-	err := metrics.Setup(instance.Namespace, instance, lightHouseAgent.GetLabels(), 8082, r.config.Client,
-		r.config.RestConfig, r.config.Scheme, reqLogger)
-	if err != nil {
-		return errors.Wrap(err, "error setting up metrics")
-	}
-
 	return nil
 }
 
-func (r *Reconciler) ensureLighthouseCoreDNSDeployment(instance *submarinerv1alpha1.ServiceDiscovery, reqLogger logr.Logger) error {
+func (r *Reconciler) ensureLighthouseCoreDNSDeployment(instance *v1alpha1.ServiceDiscovery, reqLogger logr.Logger) error {
 	lighthouseCoreDNSDeployment := newLighthouseCoreDNSDeployment(instance)
 	if _, err := helpers.ReconcileDeployment(instance, lighthouseCoreDNSDeployment, reqLogger,
 		r.config.Client, r.config.Scheme); err != nil {
@@ -742,16 +741,10 @@ func (r *Reconciler) ensureLighthouseCoreDNSDeployment(instance *submarinerv1alp
 		return errors.Wrap(err, "error reconciling coredns deployment")
 	}
 
-	err := metrics.Setup(instance.Namespace, instance, lighthouseCoreDNSDeployment.GetLabels(), 9153, r.config.Client, r.config.RestConfig,
-		r.config.Scheme, reqLogger)
-	if err != nil {
-		return errors.Wrap(err, "error setting up coredns metrics")
-	}
-
 	return nil
 }
 
-func (r *Reconciler) ensureLighthouseCoreDNSService(ctx context.Context, instance *submarinerv1alpha1.ServiceDiscovery,
+func (r *Reconciler) ensureLighthouseCoreDNSService(ctx context.Context, instance *v1alpha1.ServiceDiscovery,
 	reqLogger logr.Logger,
 ) error {
 	lighthouseCoreDNSService := &corev1.Service{}

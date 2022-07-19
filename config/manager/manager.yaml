@@ -1,46 +1,65 @@
----
 apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    control-plane: submariner-operator
+    control-plane: controller-manager
   name: system
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: submariner-operator
+  name: controller-manager
   namespace: system
   labels:
-    control-plane: submariner-operator
+    control-plane: controller-manager
 spec:
   selector:
     matchLabels:
-      control-plane: submariner-operator
+      control-plane: controller-manager
   replicas: 1
   template:
     metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
       labels:
-        control-plane: submariner-operator
+        control-plane: controller-manager
     spec:
-      serviceAccountName: submariner-operator
+      securityContext:
+        runAsNonRoot: true
       containers:
-        - name: submariner-operator
-          # Replace this with the built image name
-          image: controller:0.0.0
-          command:
-            - submariner-operator
-          # args:
-          #  - --enable-leader-election
-          imagePullPolicy: Always
-          env:
-            - name: WATCH_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: OPERATOR_NAME
-              value: "submariner-operator"
+      - command:
+        - /manager
+        args:
+        - --leader-elect
+        image: controller:latest
+        name: manager
+        securityContext:
+          allowPrivilegeEscalation: false
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # TODO(Jaanki): Configure the resources accordingly based on the project requirements.
+        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        env:
+          - name: WATCH_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10

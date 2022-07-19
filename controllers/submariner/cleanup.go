@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/submariner-io/admiral/pkg/finalizer"
-	operatorv1alpha1 "github.com/submariner-io/submariner-operator/api/submariner/v1alpha1"
+	v1alpha1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/controllers/constants"
 	"github.com/submariner-io/submariner-operator/controllers/resource"
 	"github.com/submariner-io/submariner-operator/controllers/uninstall"
@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-func (r *Reconciler) runComponentCleanup(ctx context.Context, instance *operatorv1alpha1.Submariner) (reconcile.Result, error) {
+func (r *Reconciler) runComponentCleanup(ctx context.Context, instance *v1alpha1.Submariner) (reconcile.Result, error) {
 	if !finalizer.IsPresent(instance, constants.CleanupFinalizer) {
 		return reconcile.Result{}, nil
 	}
@@ -100,8 +100,8 @@ func (r *Reconciler) runComponentCleanup(ctx context.Context, instance *operator
 }
 
 // nolint:wrapcheck // No need to wrap
-func (r *Reconciler) removeFinalizer(ctx context.Context, instance *operatorv1alpha1.Submariner) error {
-	return finalizer.Remove(ctx, resource.ForControllerClient(r.config.Client, instance.Namespace, &operatorv1alpha1.Submariner{}),
+func (r *Reconciler) removeFinalizer(ctx context.Context, instance *v1alpha1.Submariner) error {
+	return finalizer.Remove(ctx, resource.ForControllerClient(r.config.Client, instance.Namespace, &v1alpha1.Submariner{}),
 		instance, constants.CleanupFinalizer)
 }
 
