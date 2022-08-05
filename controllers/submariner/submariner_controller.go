@@ -1,7 +1,5 @@
 /*
-SPDX-License-Identifier: Apache-2.0
-
-Copyright Contributors to the Submariner project.
+Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,64 +18,49 @@ package submariner
 
 import (
 	"context"
-	"reflect"
-	"sync"
-
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	"github.com/submariner-io/admiral/pkg/federate"
-	"github.com/submariner-io/admiral/pkg/finalizer"
-	level "github.com/submariner-io/admiral/pkg/log"
 	"github.com/submariner-io/admiral/pkg/resource"
 	"github.com/submariner-io/admiral/pkg/syncer"
 	"github.com/submariner-io/admiral/pkg/util"
-	submopv1a1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
-	"github.com/submariner-io/submariner-operator/controllers/constants"
-	resourceiface "github.com/submariner-io/submariner-operator/controllers/resource"
 	"github.com/submariner-io/submariner-operator/pkg/crd"
-	"github.com/submariner-io/submariner-operator/pkg/discovery/network"
 	"github.com/submariner-io/submariner-operator/pkg/gateway"
 	"github.com/submariner-io/submariner-operator/pkg/images"
 	"github.com/submariner-io/submariner-operator/pkg/names"
 	submv1 "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sync"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/submariner-io/admiral/pkg/federate"
+	"github.com/submariner-io/admiral/pkg/finalizer"
+	level "github.com/submariner-io/admiral/pkg/log"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
+	"github.com/submariner-io/submariner-operator/controllers/constants"
+	resourceiface "github.com/submariner-io/submariner-operator/controllers/resource"
+	"github.com/submariner-io/submariner-operator/pkg/discovery/network"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
+	"reflect"
 )
 
-const (
-	gatewayMetricsServerPort   = 8080
-	globalnetMetricsServerPort = 8081
-)
-
-var log = logf.Log.WithName("controller_submariner")
-
-type Config struct {
-	// This client is scoped to the operator namespace intended to only be used for resources created and maintained by this
-	// controller. Also it's a split client that reads objects from the cache and writes to the apiserver.
-	ScopedClient client.Client
-	// This client can be used to access any other resource not in the operator namespace.
-	GeneralClient  client.Client
-	RestConfig     *rest.Config
-	Scheme         *runtime.Scheme
-	DynClient      dynamic.Interface
-	ClusterNetwork *network.ClusterNetwork
-}
-
-// Reconciler reconciles a Submariner object.
+// Reconciler reconciles a Submariner object
 type Reconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
 	config Config
 	log    logr.Logger
 
@@ -99,6 +82,23 @@ type Reconciler struct {
 	syncerMutex           sync.Mutex
 }
 
+const (
+	gatewayMetricsServerPort   = 8080
+	globalnetMetricsServerPort = 8081
+)
+
+var log = logf.Log.WithName("controller_submariner")
+
+type Config struct {
+	// This client is a split client that reads objects from the cache and writes to the apiserver
+	//Client         client.Client
+	RestConfig     *rest.Config
+	Scheme         *runtime.Scheme
+	KubeClient     kubernetes.Interface
+	DynClient      dynamic.Interface
+	ClusterNetwork *network.ClusterNetwork
+}
+
 // blank assignment to verify that Reconciler implements reconcile.Reconciler.
 var _ reconcile.Reconciler = &Reconciler{}
 
@@ -111,16 +111,13 @@ func NewReconciler(config *Config) *Reconciler {
 	}
 }
 
-// Reconcile reads that state of the cluster for a Submariner object and makes changes based on the state read
-// and what is in the Submariner.Spec
-// Note:
-// The Controller will requeue the Request to be processed again if the returned error is non-nil or
-// Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
+//+kubebuilder:rbac:groups=submariner.io,resources=submariners,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=submariner.io,resources=submariners/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=submariner.io,resources=submariners/finalizers,verbs=update
 
-// +kubebuilder:rbac:groups=submariner.io,resources=submariners,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=submariner.io,resources=submariners/status,verbs=get;update;patch
-// nolint:gocyclo // Refactoring would yield functions with a lot of params which isn't ideal either.
-func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+	//_ = log.FromContext(ctx)
+
 	reqLogger := log.V(2).WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling Submariner")
 
@@ -209,21 +206,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	instance.Status.GlobalCIDR = instance.Spec.GlobalCIDR
 	instance.Status.Gateways = &gatewayStatuses
 
-	err = updateDaemonSetStatus(ctx, r.config.ScopedClient, gatewayDaemonSet, &instance.Status.GatewayDaemonSetStatus, request.Namespace)
+	err = updateDaemonSetStatus(ctx, r.Client, gatewayDaemonSet, &instance.Status.GatewayDaemonSetStatus, request.Namespace)
 	if err != nil {
 		reqLogger.Error(err, "failed to check gateway daemonset containers")
 
 		return reconcile.Result{}, err
 	}
 
-	err = updateDaemonSetStatus(ctx, r.config.ScopedClient, routeagentDaemonSet, &instance.Status.RouteAgentDaemonSetStatus, request.Namespace)
+	err = updateDaemonSetStatus(ctx, r.Client, routeagentDaemonSet, &instance.Status.RouteAgentDaemonSetStatus, request.Namespace)
 	if err != nil {
 		reqLogger.Error(err, "failed to check route agent daemonset containers")
 
 		return reconcile.Result{}, err
 	}
 
-	err = updateDaemonSetStatus(ctx, r.config.ScopedClient, globalnetDaemonSet, &instance.Status.GlobalnetDaemonSetStatus, request.Namespace)
+	err = updateDaemonSetStatus(ctx, r.Client, globalnetDaemonSet, &instance.Status.GlobalnetDaemonSetStatus, request.Namespace)
 	if err != nil {
 		reqLogger.Error(err, "failed to check gateway daemonset containers")
 
@@ -237,7 +234,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	}
 
 	if !reflect.DeepEqual(instance.Status, initialStatus) {
-		err := r.config.ScopedClient.Status().Update(ctx, instance)
+		err := r.Client.Status().Update(ctx, instance)
 		if err != nil {
 			// Log the error, but indicate success, to avoid reconciliation storms
 			// TODO skitt determine what we should really be doing for concurrent updates to the Submariner CR
@@ -250,38 +247,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	return reconcile.Result{}, nil
 }
 
-func getImagePath(submariner *submopv1a1.Submariner, imageName, componentName string) string {
-	return images.GetImagePath(submariner.Spec.Repository, submariner.Spec.Version, imageName, componentName,
-		submariner.Spec.ImageOverrides)
-}
-
-func (r *Reconciler) getSubmariner(ctx context.Context, key types.NamespacedName) (*submopv1a1.Submariner, error) {
-	instance := &submopv1a1.Submariner{}
-
-	err := r.config.ScopedClient.Get(ctx, key, instance)
-	if err != nil {
-		return nil, errors.Wrap(err, "error retrieving Submariner resource")
-	}
-
-	return instance, nil
-}
-
-func (r *Reconciler) addFinalizer(ctx context.Context, instance *submopv1a1.Submariner) (*submopv1a1.Submariner, error) {
-	added, err := finalizer.Add(ctx, resourceiface.ForControllerClient(r.config.ScopedClient, instance.Namespace, &submopv1a1.Submariner{}),
-		instance, constants.CleanupFinalizer)
-	if err != nil {
-		return nil, err // nolint:wrapcheck // No need to wrap
-	}
-
-	if !added {
-		return instance, nil
-	}
-
-	log.Info("Added finalizer")
-
-	return r.getSubmariner(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: instance.Name})
-}
-
+// SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Set up the CRDs we need
 	crdUpdater, err := crd.UpdaterFromRestConfig(mgr.GetConfig())
@@ -318,20 +284,52 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("submariner-controller").
 		// Watch for changes to primary resource Submariner
-		For(&submopv1a1.Submariner{}).
+		For(&v1alpha1.Submariner{}).
 		// Watch for changes to secondary resource DaemonSets and requeue the owner Submariner
 		Owns(&appsv1.DaemonSet{}).
 		Watches(&source.Kind{Type: &submv1.Gateway{}}, handler.EnqueueRequestsFromMapFunc(mapFn)).
 		Complete(r)
 }
 
-func (r *Reconciler) setupSecretSyncer(instance *submopv1a1.Submariner, logger logr.Logger, namespace string) error {
+func getImagePath(submariner *v1alpha1.Submariner, imageName, componentName string) string {
+	return images.GetImagePath(submariner.Spec.Repository, submariner.Spec.Version, imageName, componentName,
+		submariner.Spec.ImageOverrides)
+}
+
+func (r *Reconciler) getSubmariner(ctx context.Context, key types.NamespacedName) (*v1alpha1.Submariner, error) {
+	instance := &v1alpha1.Submariner{}
+
+	err := r.Client.Get(ctx, key, instance)
+	if err != nil {
+		return nil, errors.Wrap(err, "error retrieving Submariner resource")
+	}
+
+	return instance, nil
+}
+
+func (r *Reconciler) addFinalizer(ctx context.Context, instance *v1alpha1.Submariner) (*v1alpha1.Submariner, error) {
+	added, err := finalizer.Add(ctx, resourceiface.ForControllerClient(r.Client, instance.Namespace, &v1alpha1.Submariner{}),
+		instance, constants.CleanupFinalizer)
+	if err != nil {
+		return nil, err // nolint:wrapcheck // No need to wrap
+	}
+
+	if !added {
+		return instance, nil
+	}
+
+	log.Info("Added finalizer")
+
+	return r.getSubmariner(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: instance.Name})
+}
+
+func (r *Reconciler) setupSecretSyncer(instance *v1alpha1.Submariner, logger logr.Logger, namespace string) error {
 	r.syncerMutex.Lock()
 	defer r.syncerMutex.Unlock()
 
 	if instance.Spec.BrokerK8sSecret != "" {
 		if _, ok := r.secretSyncCancelFuncs[instance.Spec.BrokerK8sSecret]; !ok {
-			_, gvr, err := util.ToUnstructuredResource(&corev1.Secret{}, r.config.ScopedClient.RESTMapper())
+			_, gvr, err := util.ToUnstructuredResource(&corev1.Secret{}, r.Client.RESTMapper())
 			if err != nil {
 				return errors.Wrap(err, "error calculating the GVR for the Secret type")
 			}
@@ -359,10 +357,10 @@ func (r *Reconciler) setupSecretSyncer(instance *submopv1a1.Submariner, logger l
 					SourceClient:    brokerClient,
 					SourceNamespace: instance.Spec.BrokerK8sRemoteNamespace,
 					Direction:       syncer.None,
-					RestMapper:      r.config.ScopedClient.RESTMapper(),
+					RestMapper:      r.Client.RESTMapper(),
 					Scheme:          r.config.Scheme,
 					Federator: federate.NewCreateOrUpdateFederator(
-						r.config.DynClient, r.config.ScopedClient.RESTMapper(), namespace, ""),
+						r.config.DynClient, r.Client.RESTMapper(), namespace, ""),
 					Transform: func(from runtime.Object, numRequeues int, op syncer.Operation) (runtime.Object, bool) {
 						secret := from.(*corev1.Secret)
 						logger.V(level.TRACE).Info("Transforming secret", "secret", secret)
@@ -398,7 +396,7 @@ func (r *Reconciler) setupSecretSyncer(instance *submopv1a1.Submariner, logger l
 	return nil
 }
 
-func (r *Reconciler) cancelSecretSyncer(instance *submopv1a1.Submariner) {
+func (r *Reconciler) cancelSecretSyncer(instance *v1alpha1.Submariner) {
 	r.syncerMutex.Lock()
 	defer r.syncerMutex.Unlock()
 

@@ -24,7 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	submariner_v1 "github.com/submariner-io/submariner-operator/api/v1alpha1"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/controllers/constants"
 	"github.com/submariner-io/submariner-operator/pkg/names"
 	corev1 "k8s.io/api/core/v1"
@@ -139,7 +139,7 @@ func testReconciliation() {
 
 	When("a custom coredns config is specified", func() {
 		BeforeEach(func() {
-			t.serviceDiscovery.Spec.CoreDNSCustomConfig = &submariner_v1.CoreDNSCustomConfig{
+			t.serviceDiscovery.Spec.CoreDNSCustomConfig = &v1alpha1.CoreDNSCustomConfig{
 				ConfigMapName: "custom-config",
 				Namespace:     "custom-config-ns",
 			}
@@ -247,7 +247,7 @@ func testCoreDNSCleanup() {
 
 	When("a custom coredns config is specified", func() {
 		BeforeEach(func() {
-			t.serviceDiscovery.Spec.CoreDNSCustomConfig = &submariner_v1.CoreDNSCustomConfig{
+			t.serviceDiscovery.Spec.CoreDNSCustomConfig = &v1alpha1.CoreDNSCustomConfig{
 				ConfigMapName: "custom-config",
 				Namespace:     "custom-config-ns",
 			}
