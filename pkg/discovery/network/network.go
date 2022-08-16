@@ -24,11 +24,10 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	operatorclientset "github.com/submariner-io/submariner-operator/pkg/client/clientset/versioned"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/pkg/names"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes"
+	"k8s.io/apimachinery/pkg/types"
+	controllerClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ClusterNetwork struct {
@@ -63,17 +62,15 @@ func (cn *ClusterNetwork) IsComplete() bool {
 	return cn != nil && len(cn.ServiceCIDRs) > 0 && len(cn.PodCIDRs) > 0
 }
 
-func Discover(dynClient dynamic.Interface, clientSet kubernetes.Interface, operatorClient operatorclientset.Interface,
-	operatorNamespace string,
-) (*ClusterNetwork, error) {
-	discovery, err := networkPluginsDiscovery(dynClient, clientSet)
+func Discover(client controllerClient.Client, operatorNamespace string) (*ClusterNetwork, error) {
+	discovery, err := networkPluginsDiscovery(client)
 	if err != nil {
 		return nil, err
 	}
 
 	if discovery != nil {
 		// TODO: The other branch of this if will not try to find the globalCIDRs
-		globalCIDR, _ := getGlobalCIDRs(operatorClient, operatorNamespace)
+		globalCIDR, _ := getGlobalCIDRs(client, operatorNamespace)
 		discovery.GlobalCIDR = globalCIDR
 
 		if discovery.IsComplete() {
@@ -83,7 +80,7 @@ func Discover(dynClient dynamic.Interface, clientSet kubernetes.Interface, opera
 		// If the info we got from the non-generic plugins is incomplete
 		// try to complete with the generic discovery mechanisms
 		if len(discovery.ServiceCIDRs) == 0 || len(discovery.PodCIDRs) == 0 {
-			genericNet, err := discoverGenericNetwork(clientSet)
+			genericNet, err := discoverGenericNetwork(client)
 			if err != nil {
 				return nil, err
 			}
@@ -103,32 +100,32 @@ func Discover(dynClient dynamic.Interface, clientSet kubernetes.Interface, opera
 	}
 
 	// If nothing specific was discovered, use the generic discovery
-	return discoverGenericNetwork(clientSet)
+	return discoverGenericNetwork(client)
 }
 
 // nolint:nilnil // Intentional as the purpose is to discover.
-func networkPluginsDiscovery(dynClient dynamic.Interface, clientSet kubernetes.Interface) (*ClusterNetwork, error) {
-	osClusterNet, err := discoverOpenShift4Network(dynClient)
+func networkPluginsDiscovery(client controllerClient.Client) (*ClusterNetwork, error) {
+	osClusterNet, err := discoverOpenShift4Network(client)
 	if err != nil || osClusterNet != nil {
 		return osClusterNet, err
 	}
 
-	weaveClusterNet, err := discoverWeaveNetwork(clientSet)
+	weaveClusterNet, err := discoverWeaveNetwork(client)
 	if err != nil || weaveClusterNet != nil {
 		return weaveClusterNet, err
 	}
 
-	canalClusterNet, err := discoverCanalFlannelNetwork(clientSet)
+	canalClusterNet, err := discoverCanalFlannelNetwork(client)
 	if err != nil || canalClusterNet != nil {
 		return canalClusterNet, err
 	}
 
-	ovnClusterNet, err := discoverOvnKubernetesNetwork(clientSet)
+	ovnClusterNet, err := discoverOvnKubernetesNetwork(client)
 	if err != nil || ovnClusterNet != nil {
 		return ovnClusterNet, err
 	}
 
-	calicoClusterNet, err := discoverCalicoNetwork(clientSet)
+	calicoClusterNet, err := discoverCalicoNetwork(client)
 	if err != nil || calicoClusterNet != nil {
 		return calicoClusterNet, err
 	}
@@ -136,13 +133,14 @@ func networkPluginsDiscovery(dynClient dynamic.Interface, clientSet kubernetes.I
 	return nil, nil
 }
 
-func getGlobalCIDRs(operatorClient operatorclientset.Interface, operatorNamespace string) (string, error) {
+func getGlobalCIDRs(operatorClient controllerClient.Client, operatorNamespace string) (string, error) {
 	if operatorClient == nil {
 		return "", nil
 	}
 
-	existingCfg, err := operatorClient.SubmarinerV1alpha1().Submariners(operatorNamespace).Get(
-		context.TODO(), names.SubmarinerCrName, v1.GetOptions{})
+	existingCfg := v1alpha1.Submariner{}
+
+	err := operatorClient.Get(context.TODO(), types.NamespacedName{Namespace: operatorNamespace, Name: names.SubmarinerCrName}, &existingCfg)
 	if err != nil {
 		return "", errors.Wrap(err, "error retrieving Submariner resource")
 	}

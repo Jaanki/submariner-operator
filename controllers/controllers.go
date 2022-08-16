@@ -22,7 +22,6 @@ import (
 	operatorclient "github.com/openshift/cluster-dns-operator/pkg/operator/client"
 	"github.com/submariner-io/submariner-operator/controllers/servicediscovery"
 	"github.com/submariner-io/submariner-operator/controllers/submariner"
-	submarinerclientset "github.com/submariner-io/submariner-operator/pkg/client/clientset/versioned"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -32,24 +31,22 @@ import (
 // nolint:wrapcheck // No need to wrap errors here.
 func AddToManager(mgr manager.Manager) error {
 	kubeClient := kubernetes.NewForConfigOrDie(mgr.GetConfig())
-	operatorClient, _ := operatorclient.NewClient(mgr.GetConfig())
+	generalClient, _ := operatorclient.NewClient(mgr.GetConfig())
 
 	if err := submariner.NewReconciler(&submariner.Config{
-		Client:     mgr.GetClient(),
-		RestConfig: mgr.GetConfig(),
-		Scheme:     mgr.GetScheme(),
-		KubeClient: kubeClient,
-		SubmClient: submarinerclientset.NewForConfigOrDie(mgr.GetConfig()),
-		DynClient:  dynamic.NewForConfigOrDie(mgr.GetConfig()),
+		ScopedClient:  mgr.GetClient(),
+		GeneralClient: generalClient,
+		RestConfig:    mgr.GetConfig(),
+		Scheme:        mgr.GetScheme(),
+		DynClient:     dynamic.NewForConfigOrDie(mgr.GetConfig()),
 	}).SetupWithManager(mgr); err != nil {
 		return err
 	}
 
 	return servicediscovery.NewReconciler(&servicediscovery.Config{
-		Client:         mgr.GetClient(),
-		RestConfig:     mgr.GetConfig(),
-		Scheme:         mgr.GetScheme(),
-		KubeClient:     kubeClient,
-		OperatorClient: operatorClient,
+		Client:     mgr.GetClient(),
+		RestConfig: mgr.GetConfig(),
+		Scheme:     mgr.GetScheme(),
+		KubeClient: kubeClient,
 	}).SetupWithManager(mgr)
 }

@@ -39,11 +39,8 @@ PLATFORMS ?= linux/amd64,linux/arm64
 IMAGES = submariner-operator submariner-operator-index
 PRELOAD_IMAGES := $(IMAGES) submariner-gateway submariner-globalnet submariner-route-agent lighthouse-agent lighthouse-coredns
 MULTIARCH_IMAGES := submariner-operator
-undefine SKIP
-undefine FOCUS
-undefine E2E_TESTDIR
 
-ifneq (,$(filter ovn,$(_using)))
+ifneq (,$(filter ovn,$(USING)))
 SETTINGS = $(DAPPER_SOURCE)/.shipyard.e2e.ovn.yml
 else
 SETTINGS = $(DAPPER_SOURCE)/.shipyard.e2e.yml
@@ -51,10 +48,7 @@ endif
 
 include $(SHIPYARD_DIR)/Makefile.inc
 
-override E2E_ARGS += cluster1 cluster2
-export DEPLOY_ARGS
 override UNIT_TEST_ARGS += test internal/env
-override VALIDATE_ARGS += --skip-dirs pkg/client
 
 GO ?= go
 GOARCH = $(shell $(GO) env GOARCH)
@@ -126,7 +120,7 @@ export PATH := $(CURDIR)/bin:$(PATH)
 # Targets to make
 
 e2e: $(VENDOR_MODULES)
-	scripts/test/e2e.sh $(E2E_ARGS)
+	scripts/test/e2e.sh cluster1 cluster2
 
 # [system-test] runs system level tests that validate the operator is properly deployed
 system-test:
@@ -135,7 +129,7 @@ system-test:
 clean:
 	rm -f bin/submariner-operator
 
-licensecheck: BUILD_ARGS=--noupx
+licensecheck: export BUILD_UPX = false
 licensecheck: build bin/linux/amd64/submariner-operator | bin/lichen
 	bin/lichen -c .lichen.yaml bin/linux/amd64/submariner-operator
 
@@ -144,7 +138,7 @@ bin/lichen: $(VENDOR_MODULES)
 	$(GO) build -o $@ github.com/uw-labs/lichen
 
 # Generate deep-copy code
-CONTROLLER_DEEPCOPY := api/submariner/v1alpha1/zz_generated.deepcopy.go
+CONTROLLER_DEEPCOPY := api/v1alpha1/zz_generated.deepcopy.go
 $(CONTROLLER_DEEPCOPY): $(VENDOR_MODULES) | $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) object:headerFile="$(CURDIR)/hack/boilerplate.go.txt,year=$(shell date +"%Y")" paths="./..."
 
@@ -154,9 +148,9 @@ $(EMBEDDED_YAMLS): pkg/embeddedyamls/generators/yamls2go.go deploy/crds/submarin
 	$(GO) generate pkg/embeddedyamls/generate.go
 
 bin/%/submariner-operator: $(VENDOR_MODULES) main.go $(EMBEDDED_YAMLS)
-	GOARCH=$(call dockertogoarch,$(patsubst bin/linux/%/,%,$(dir $@))) ${SCRIPTS_DIR}/compile.sh \
-	--ldflags "-X=github.com/submariner-io/submariner-operator/pkg/version.Version=$(VERSION)" \
-	$@ . $(BUILD_ARGS)
+	GOARCH=$(call dockertogoarch,$(patsubst bin/linux/%/,%,$(dir $@))) \
+	LDFLAGS="-X=github.com/submariner-io/submariner-operator/pkg/version.Version=$(VERSION)" \
+	${SCRIPTS_DIR}/compile.sh $@ .
 
 ci: $(EMBEDDED_YAMLS) golangci-lint markdownlint unit build images
 
@@ -165,11 +159,11 @@ $(CONTROLLER_GEN): $(VENDOR_MODULES)
 	mkdir -p $(@D)
 	$(GO) build -o $@ sigs.k8s.io/controller-tools/cmd/controller-gen
 
-deploy/crds/submariner.io_servicediscoveries.yaml: ./api/submariner/v1alpha1/servicediscovery_types.go $(VENDOR_MODULES) | $(CONTROLLER_GEN)
+deploy/crds/submariner.io_servicediscoveries.yaml: ./api/v1alpha1/servicediscovery_types.go $(VENDOR_MODULES) | $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=deploy/crds
 	test -f $@
 
-deploy/crds/submariner.io_brokers.yaml deploy/crds/submariner.io_submariners.yaml: ./api/submariner/v1alpha1/submariner_types.go $(VENDOR_MODULES) | $(CONTROLLER_GEN)
+deploy/crds/submariner.io_brokers.yaml deploy/crds/submariner.io_submariners.yaml: ./api/v1alpha1/submariner_types.go $(VENDOR_MODULES) | $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=deploy/crds
 	test -f $@
 
@@ -177,17 +171,6 @@ deploy/crds/submariner.io_brokers.yaml deploy/crds/submariner.io_submariners.yam
 deploy/submariner/crds/submariner.io_clusters.yaml deploy/submariner/crds/submariner.io_endpoints.yaml deploy/submariner/crds/submariner.io_gateways.yaml: $(VENDOR_MODULES) | $(CONTROLLER_GEN)
 	cd vendor/github.com/submariner-io/submariner && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../../../../deploy/submariner/crds
 	test -f $@
-
-# Generate the clientset for the Submariner APIs
-# It needs to be run when the Submariner APIs change
-generate-clientset: $(VENDOR_MODULES)
-	git clone https://github.com/kubernetes/code-generator -b kubernetes-1.19.10 $${GOPATH}/src/k8s.io/code-generator
-	cd $${GOPATH}/src/k8s.io/code-generator && $(GO) mod vendor
-	GO111MODULE=on $${GOPATH}/src/k8s.io/code-generator/generate-groups.sh \
-		client,deepcopy \
-		github.com/submariner-io/submariner-operator/pkg/client \
-		github.com/submariner-io/submariner-operator/api \
-		submariner:v1alpha1
 
 # Generate manifests e.g. CRD, RBAC etc
 manifests: $(CONTROLLER_DEEPCOPY) $(CONTROLLER_GEN) $(VENDOR_MODULES)
@@ -243,8 +226,7 @@ scorecard: bundle olm clusters
 	$(OPERATOR_SDK) scorecard --kubeconfig=$(DAPPER_OUTPUT)/kubeconfigs/kind-config-cluster1 -o text ./bundle
 
 # Create the clusters with olm
-olm:
-	$(eval override CLUSTERS_ARGS += --olm)
+olm: export OLM = true
 
 golangci-lint: $(EMBEDDED_YAMLS)
 
@@ -269,7 +251,7 @@ $(OPERATOR_SDK):
 	sha256sum -c scripts/operator-sdk.sha256
 	chmod a+x $@
 
-.PHONY: build ci clean generate-clientset bundle packagemanifests kustomization is-semantic-version olm scorecard system-test
+.PHONY: build ci clean bundle packagemanifests kustomization is-semantic-version olm scorecard system-test
 
 else
 

@@ -20,37 +20,30 @@ package network
 
 import (
 	"github.com/submariner-io/submariner/pkg/cni"
-	"k8s.io/client-go/kubernetes"
+	controllerClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// nolint:nilnil // Intentional as the purpose is to discover.
-func discoverWeaveNetwork(clientSet kubernetes.Interface) (*ClusterNetwork, error) {
-	weaveNetPod, err := FindPod(clientSet, "name=weave-net")
+func discoverWeaveNetwork(client controllerClient.Client) (*ClusterNetwork, error) {
+	weaveNetPod, err := FindPod(client, "name=weave-net")
 
 	if err != nil || weaveNetPod == nil {
 		return nil, err
 	}
 
-	var clusterNetwork *ClusterNetwork
+	clusterNetwork := &ClusterNetwork{
+		NetworkPlugin: cni.WeaveNet,
+	}
 
 	for i := range weaveNetPod.Spec.Containers {
 		for _, envVar := range weaveNetPod.Spec.Containers[i].Env {
 			if envVar.Name == "IPALLOC_RANGE" {
-				clusterNetwork = &ClusterNetwork{
-					PodCIDRs:      []string{envVar.Value},
-					NetworkPlugin: cni.WeaveNet,
-				}
-
+				clusterNetwork.PodCIDRs = []string{envVar.Value}
 				break
 			}
 		}
 	}
 
-	if clusterNetwork == nil {
-		return nil, nil
-	}
-
-	clusterIPRange, err := findClusterIPRange(clientSet)
+	clusterIPRange, err := findClusterIPRange(client)
 	if err == nil && clusterIPRange != "" {
 		clusterNetwork.ServiceCIDRs = []string{clusterIPRange}
 	}

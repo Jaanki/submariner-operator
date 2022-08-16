@@ -26,9 +26,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/syncer/broker"
-	"github.com/submariner-io/submariner-operator/api/submariner/v1alpha1"
+	"github.com/submariner-io/submariner-operator/api/v1alpha1"
 	"github.com/submariner-io/submariner-operator/controllers/helpers"
-	"github.com/submariner-io/submariner-operator/controllers/metrics"
 	"github.com/submariner-io/submariner-operator/pkg/names"
 	submarinerv1 "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	"github.com/submariner-io/submariner/pkg/port"
@@ -247,13 +246,10 @@ func (r *Reconciler) reconcileGatewayDaemonSet(
 	instance *v1alpha1.Submariner, reqLogger logr.Logger,
 ) (*appsv1.DaemonSet, error) {
 	daemonSet, err := helpers.ReconcileDaemonSet(instance, newGatewayDaemonSet(instance, names.GatewayComponent),
-		reqLogger, r.config.Client, r.config.Scheme)
+		reqLogger, r.Client, r.config.Scheme)
 	if err != nil {
 		return nil, err
 	}
-
-	err = metrics.Setup(instance.Namespace, instance, daemonSet.GetLabels(), gatewayMetricsServerPort, r.config.Client,
-		r.config.RestConfig, r.config.Scheme, reqLogger)
 
 	return daemonSet, err
 }
@@ -293,7 +289,7 @@ func (r *Reconciler) retrieveGateways(ctx context.Context, owner metav1.Object,
 ) ([]submarinerv1.Gateway, error) {
 	foundGateways := &submarinerv1.GatewayList{}
 
-	err := r.config.Client.List(ctx, foundGateways, client.InNamespace(namespace))
+	err := r.Client.List(ctx, foundGateways, client.InNamespace(namespace))
 	if err != nil && apierrors.IsNotFound(err) {
 		return []submarinerv1.Gateway{}, nil
 	}
