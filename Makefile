@@ -37,7 +37,7 @@ dockertogoarch = $(patsubst arm/v7,arm,$(1))
 
 PLATFORMS ?= linux/amd64,linux/arm64
 IMAGES = submariner-operator submariner-operator-index
-PRELOAD_IMAGES := $(IMAGES) submariner-gateway submariner-globalnet submariner-route-agent lighthouse-agent lighthouse-coredns
+PRELOAD_IMAGES := submariner-operator submariner-gateway submariner-globalnet submariner-route-agent lighthouse-agent lighthouse-coredns
 MULTIARCH_IMAGES := submariner-operator
 
 ifneq (,$(filter ovn,$(USING)))
@@ -105,7 +105,7 @@ endif
 REPO ?= quay.io/submariner
 IMG ?= $(REPO)/submariner-operator:$(VERSION)
 # Produce v1 CRDs, requiring Kubernetes 1.16 or later
-CRD_OPTIONS ?= "crd:crdVersions=v1,trivialVersions=false"
+CRD_OPTIONS ?= "crd:crdVersions=v1"
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell $(GO) env GOBIN))
