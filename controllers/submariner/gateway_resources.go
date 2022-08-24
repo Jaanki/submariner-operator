@@ -147,8 +147,8 @@ func newGatewayPodTemplate(cr *v1alpha1.Submariner, name string, podSelectorLabe
 			Containers: []corev1.Container{
 				{
 					Name:            name,
-					Image:           getImagePath(cr, names.GatewayImage, names.GatewayImage),
-					ImagePullPolicy: helpers.GetPullPolicy(cr.Spec.Version, cr.Spec.ImageOverrides[names.GatewayImage]),
+					Image:           getImagePath(cr, names.GatewayImage, names.GatewayComponent),
+					ImagePullPolicy: helpers.GetPullPolicy(cr.Spec.Version, cr.Spec.ImageOverrides[names.GatewayComponent]),
 					Command:         []string{"submariner.sh"},
 					SecurityContext: &corev1.SecurityContext{
 						Capabilities: &corev1.Capabilities{
@@ -215,9 +215,9 @@ func newGatewayPodTemplate(cr *v1alpha1.Submariner, name string, podSelectorLabe
 			},
 			ServiceAccountName:            names.GatewayComponent,
 			HostNetwork:                   true,
+			DNSPolicy:                     corev1.DNSClusterFirstWithHostNet,
 			TerminationGracePeriodSeconds: pointer.Int64(1),
 			RestartPolicy:                 corev1.RestartPolicyAlways,
-			DNSPolicy:                     corev1.DNSClusterFirst,
 			// The gateway engine must be able to run on any flagged node, regardless of existing taints
 			Tolerations: []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 			Volumes:     volumes,

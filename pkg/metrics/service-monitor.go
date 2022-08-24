@@ -20,11 +20,12 @@ package metrics
 import (
 	"context"
 	"fmt"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	monitoringv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
-	monclientv1 "github.com/coreos/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/pkg/errors"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	monclientv1 "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +34,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-var ErrServiceMonitorNotPresent = fmt.Errorf("no ServiceMonitor registered with the API")
+var (
+	log                         = logf.Log.WithName("metrics")
+	ErrServiceMonitorNotPresent = fmt.Errorf("no ServiceMonitor registered with the API")
+)
 
 const openshiftMonitoringNS = "openshift-monitoring"
 
