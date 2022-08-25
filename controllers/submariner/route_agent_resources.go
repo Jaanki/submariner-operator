@@ -86,8 +86,8 @@ func newRouteAgentDaemonSet(cr *v1alpha1.Submariner, name string) *appsv1.Daemon
 					Containers: []corev1.Container{
 						{
 							Name:            name,
-							Image:           getImagePath(cr, names.RouteAgentImage, names.RouteAgentImage),
-							ImagePullPolicy: helpers.GetPullPolicy(cr.Spec.Version, cr.Spec.ImageOverrides[names.RouteAgentImage]),
+							Image:           getImagePath(cr, names.RouteAgentImage, names.RouteAgentComponent),
+							ImagePullPolicy: helpers.GetPullPolicy(cr.Spec.Version, cr.Spec.ImageOverrides[names.RouteAgentComponent]),
 							// FIXME: Should be entrypoint script, find/use correct file for routeagent
 							Command: []string{"submariner-route-agent.sh"},
 							SecurityContext: &corev1.SecurityContext{
@@ -120,6 +120,7 @@ func newRouteAgentDaemonSet(cr *v1alpha1.Submariner, name string) *appsv1.Daemon
 					},
 					ServiceAccountName: names.RouteAgentComponent,
 					HostNetwork:        true,
+					DNSPolicy:          corev1.DNSClusterFirstWithHostNet,
 					// The route agent engine on all nodes, regardless of existing taints
 					Tolerations: []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 				},

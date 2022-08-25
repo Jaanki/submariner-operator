@@ -25,9 +25,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"syscall"
 
-	// TODO: in operator-sdk v1 the below utilities were moved to internal.
+	operatorclient "github.com/openshift/cluster-dns-operator/pkg/operator/client"
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
@@ -35,17 +34,21 @@ import (
 	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/log/kzerolog"
 	"github.com/submariner-io/submariner-operator/api/v1alpha1"
-	"github.com/submariner-io/submariner-operator/controllers"
+	"github.com/submariner-io/submariner-operator/controllers/servicediscovery"
 	"github.com/submariner-io/submariner-operator/controllers/submariner"
 	"github.com/submariner-io/submariner-operator/pkg/crd"
+	"github.com/submariner-io/submariner-operator/pkg/gateway"
 	"github.com/submariner-io/submariner-operator/pkg/lighthouse"
 	"github.com/submariner-io/submariner-operator/pkg/metrics"
 	"github.com/submariner-io/submariner-operator/pkg/version"
+	submv1 "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	v1 "k8s.io/api/core/v1"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
@@ -74,14 +77,6 @@ func printVersion() {
 	log.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
 	log.Info(fmt.Sprintf("Version of operator-sdk: %v", sdkVersion.Version))
 	log.Info(fmt.Sprintf("Submariner operator version: %v", version.Version))
-}
-
-// nolint:wsl // block should not end with a whitespace.
-func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(v1alpha1.AddToScheme(scheme))
-	utilruntime.Must(apiextensions.AddToScheme(scheme))
-	// +kubebuilder:scaffold:scheme
 }
 
 func init() {
@@ -123,20 +118,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create a new Cmd to provide shared dependencies and start components
-	mgr, err := manager.New(cfg, manager.Options{
-		Namespace:          namespace,
-		MapperProvider:     apiutil.NewDiscoveryRESTMapper,
-		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
-		Scheme:             scheme,
-	})
-	if err != nil {
-		log.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	log.Info("Registering Components.")
-
 	// Set up the CRDs we need
 	crdUpdater, err := crd.UpdaterFromRestConfig(cfg)
 	if err != nil {
@@ -146,26 +127,36 @@ func main() {
 
 	log.Info("Creating the Lighthouse CRDs")
 
-	updated, err := lighthouse.Ensure(crdUpdater, lighthouse.DataCluster)
-	if err != nil {
+	if _, err = lighthouse.Ensure(crdUpdater, lighthouse.DataCluster); err != nil {
 		log.Error(err, "")
 		os.Exit(1)
 	}
 
-	if updated {
-		log.Info("The Lighthouse CRDs were updated, restarting...")
-		restartOperator()
+	log.Info("Creating the Gateway CRDs")
+
+	if err := gateway.Ensure(crdUpdater); err != nil {
+		log.Error(err, "")
+		os.Exit(1)
 	}
 
 	// Setup Scheme for all resources
-	if err := v1alpha1.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Error(err, "")
-		os.Exit(1)
-	}
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+	// These are required so that we can manipulate CRDs
+	utilruntime.Must(apiextensions.AddToScheme(scheme))
+	// These are required so that we can retrieve Gateway objects using the dynamic client
+	utilruntime.Must(submv1.AddToScheme(scheme))
+	// +kubebuilder:scaffold:scheme
 
-	// Setup all Controllers
-	if err := controllers.AddToManager(mgr); err != nil {
-		log.Error(err, "")
+	// Create a new Cmd to provide shared dependencies and start components
+	mgr, err := manager.New(cfg, manager.Options{
+		Namespace:          namespace,
+		MapperProvider:     apiutil.NewDiscoveryRESTMapper,
+		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
+		Scheme:             scheme,
+	})
+	if err != nil {
+		log.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
@@ -187,15 +178,40 @@ func main() {
 
 	createServiceMonitors(ctx, cfg, servicePorts, namespace)
 
+	log.Info("Registering Components.")
+
+	// Setup all Controllers
 	if err = (&submariner.BrokerReconciler{
 		Client: mgr.GetClient(),
 		Config: mgr.GetConfig(),
-		Log:    logf.Log.WithName("controllers").WithName("Broker"),
-		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "Broker")
 		os.Exit(1)
 	}
+
+	generalClient, _ := operatorclient.NewClient(mgr.GetConfig())
+
+	if err = submariner.NewReconciler(&submariner.Config{
+		ScopedClient:  mgr.GetClient(),
+		GeneralClient: generalClient,
+		RestConfig:    mgr.GetConfig(),
+		Scheme:        mgr.GetScheme(),
+		DynClient:     dynamic.NewForConfigOrDie(mgr.GetConfig()),
+	}).SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "Submariner")
+		os.Exit(1)
+	}
+
+	if err = (&servicediscovery.Reconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		RestConfig: mgr.GetConfig(),
+		KubeClient: kubernetes.NewForConfigOrDie(mgr.GetConfig()),
+	}).SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "ServiceDiscovery")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	// Start the Cmd
@@ -259,23 +275,6 @@ func serveCRMetrics(cfg *rest.Config) error {
 	}
 
 	return nil
-}
-
-func restartOperator() {
-	binary, err := os.Executable()
-	if err != nil {
-		log.Error(err, "unable to find our executable")
-		// We'll end up crashing and the orchestrator will restart us
-		os.Exit(1)
-	}
-
-	if err = syscall.Exec(binary, os.Args, os.Environ()); err != nil {
-		log.Error(err, "error restarting the operator")
-		os.Exit(1)
-	}
-
-	// Something went wrong, rely on the orchestrator to restart us
-	os.Exit(1)
 }
 
 // getWatchNamespace returns the Namespace the operator should be watching for changes.
