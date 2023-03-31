@@ -25,7 +25,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: brokers.submariner.io
 spec:
@@ -94,7 +94,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: submariners.submariner.io
 spec:
@@ -1048,7 +1048,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: servicediscoveries.submariner.io
 spec:
@@ -1198,7 +1198,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: clusters.submariner.io
 spec:
@@ -1265,7 +1265,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: endpoints.submariner.io
 spec:
@@ -1342,7 +1342,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: gateways.submariner.io
 spec:
@@ -1510,7 +1510,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: clusterglobalegressips.submariner.io
 spec:
@@ -1641,7 +1641,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: globalegressips.submariner.io
 spec:
@@ -1821,7 +1821,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: globalingressips.submariner.io
 spec:
@@ -2195,6 +2195,185 @@ spec:
                   x-kubernetes-list-map-keys:
                     - cluster
                   x-kubernetes-list-type: map
+`
+	Config_broker_broker_admin_service_account_yaml = `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: submariner-k8s-broker-admin
+`
+	Config_broker_broker_admin_role_yaml = `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: submariner-k8s-broker-admin
+rules:
+  - apiGroups:
+      - submariner.io
+    resources:
+      - clusters
+      - endpoints
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - submariner.io
+    resources:
+      - brokers
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+      - secrets
+      - configmaps
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - update
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - get
+      - list
+      - delete
+  - apiGroups:
+      - multicluster.x-k8s.io
+    resources:
+      - '*'
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+      - endpointslices/restricted
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+`
+	Config_broker_broker_admin_role_binding_yaml = `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: submariner-k8s-broker-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: submariner-k8s-broker-admin
+subjects:
+  - kind: ServiceAccount
+    name: submariner-k8s-broker-admin
+`
+	Config_broker_broker_client_service_account_yaml = `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: submariner-k8s-broker-client
+`
+	Config_broker_broker_client_role_yaml = `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: submariner-k8s-broker-cluster
+rules:
+  - apiGroups:
+      - submariner.io
+    resources:
+      - clusters
+      - endpoints
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - submariner.io
+    resources:
+      - brokers
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - multicluster.x-k8s.io
+    resources:
+      - '*'
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+      - endpointslices/restricted
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+`
+	Config_broker_broker_client_role_binding_yaml = `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: submariner-k8s-broker-client
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: submariner-k8s-broker-cluster
+subjects:
+  - kind: ServiceAccount
+    name: submariner-k8s-broker-client
 `
 	Config_rbac_submariner_operator_service_account_yaml = `---
 apiVersion: v1
